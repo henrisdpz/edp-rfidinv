@@ -49,13 +49,10 @@ DO $$ BEGIN
     CREATE TYPE core.zone_type AS ENUM ('DOCK', 'STORAGE', 'PARKING', 'GATE', 'WORKSHOP', 'OFFICE','LABORATORY', 'OTHER');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
-    CREATE TYPE core.vehicle_category AS ENUM ('CAR', 'MOTORCYCLE', 'VAN', 'PICKUP', 'TRUCK', 'HEAVY_TRUCK', 'BUS', 'TRAILER', 'AMBULANCE', 'SPECIAL', 'OTHER');
+    CREATE TYPE core.vehicle_category AS ENUM ('LIGHT_DUTY_VEHICLE','MEDIUM_DUTY_VEHICLE','HEAVY_DUTY_VEHICLE', 'OTHER');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TYPE core.vehicle_status AS ENUM ('ACTIVE', 'INACTIVE', 'IN_MAINTENANCE', 'RESERVED', 'SOLD', 'SCRAPPED', 'STOLEN');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
-    CREATE TYPE core.fuel_type AS ENUM ('GASOLINE', 'ETHANOL', 'FLEX', 'DIESEL', 'CNG', 'ELECTRIC', 'HYBRID', 'OTHER');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TYPE core.ownership_type AS ENUM ('OWNED', 'LEASED', 'RENTED', 'THIRD_PARTY');
@@ -70,16 +67,7 @@ DO $$ BEGIN
     CREATE TYPE core.equipment_condition AS ENUM ('NEW', 'GOOD', 'FAIR', 'POOR', 'DAMAGED');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
-    CREATE TYPE core.person_type AS ENUM ('EMPLOYEE', 'DRIVER', 'TECHNICIAN', 'CONTRACTOR', 'OTHER');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
     CREATE TYPE core.user_role AS ENUM ('ADMIN', 'MANAGER', 'OPERATOR', 'AUDITOR', 'VIEWER', 'SERVICE');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
-    CREATE TYPE rfid.tag_type AS ENUM ('UHF_EPC_GEN2', 'UHF_EPC_GEN2V2', 'HF_ISO15693', 'HF_NFC', 'LF_125KHZ', 'ACTIVE_BLE', 'ACTIVE_2_4GHZ');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
-    CREATE TYPE rfid.tag_form_factor AS ENUM ('ADHESIVE_LABEL', 'HARD_TAG', 'ON_METAL', 'WINDSHIELD', 'CABLE_TIE', 'EMBEDDED', 'KEY_FOB', 'CARD');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TYPE rfid.tag_status AS ENUM ('NEW', 'ENCODED', 'ACTIVE', 'DAMAGED', 'LOST', 'RETIRED');
@@ -92,15 +80,6 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TYPE rfid.reader_status AS ENUM ('ONLINE', 'OFFLINE', 'DEGRADED', 'MAINTENANCE', 'DECOMMISSIONED');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
-    CREATE TYPE rfid.reader_protocol AS ENUM ('LLRP', 'MQTT', 'HTTP_REST', 'WEBSOCKET', 'SERIAL', 'TCP_RAW', 'VENDOR_SDK');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
-    CREATE TYPE rfid.rf_region AS ENUM ('ANATEL_BR', 'FCC_US', 'ETSI_EU', 'OTHER');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN
-    CREATE TYPE rfid.antenna_polarization AS ENUM ('LINEAR', 'CIRCULAR_RIGHT', 'CIRCULAR_LEFT');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TYPE rfid.read_direction AS ENUM ('IN', 'OUT', 'UNKNOWN');
@@ -254,7 +233,7 @@ CREATE TABLE IF NOT EXISTS core.vehicle (
     year_manufacture smallint,
     year_model smallint,
     color text,
-    category core.vehicle_category DEFAULT 'VAN' NOT NULL,
+    category core.vehicle_category DEFAULT 'MEDIUM_DUTY_VEHICLE' NOT NULL,
     ownership_type core.ownership_type DEFAULT 'OWNED' NOT NULL,
     status core.vehicle_status DEFAULT 'ACTIVE' NOT NULL,
     base_location_id bigint NOT NULL,
@@ -286,4 +265,93 @@ CREATE TABLE IF NOT EXISTS core.vehicle (
     updated_by bigint,
     deleted_at timestamptz,
     CONSTRAINT pk_vehicle PRIMARY KEY (vehicle_id)
+);
+
+CREATE TABLE IF NOT EXISTS core.equipment_category (
+    equipment_category_id bigint GENERATED ALWAYS AS IDENTITY,
+    organization_id bigint NOT NULL,
+    parent_category_id bigint,
+    code text NOT NULL,
+    name text NOT NULL,
+    description text,
+    is_critical boolean DEFAULT false NOT NULL,
+    requires_calibration boolean DEFAULT false NOT NULL,
+    calibration_interval_days integer,
+    maintenance_interval_days integer,
+    default_tag_type rfid.tag_type,
+    default_tag_form_factor rfid.tag_form_factor,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    created_by bigint,
+    updated_by bigint,
+    deleted_at timestamptz,
+    CONSTRAINT pk_equipment_category PRIMARY KEY (equipment_category_id)
+);
+
+CREATE TABLE IF NOT EXISTS core.equipment_model (
+    equipment_model_id bigint GENERATED ALWAYS AS IDENTITY,
+    organization_id bigint NOT NULL,
+    equipment_category_id bigint NOT NULL,
+    manufacturer text NOT NULL,
+    model_name text NOT NULL,
+    part_number text,
+    description text,
+    specs jsonb DEFAULT '{}'::jsonb NOT NULL,
+    weight_kg numeric(8,3),
+    length_mm integer,
+    width_mm integer,
+    height_mm integer,
+    unit_cost numeric(14,2),
+    currency char(3) DEFAULT 'BRL' NOT NULL,
+    datasheet_url text,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    created_by bigint,
+    updated_by bigint,
+    deleted_at timestamptz,
+    CONSTRAINT pk_equipment_model PRIMARY KEY (equipment_model_id)
+);
+
+CREATE TABLE IF NOT EXISTS core.equipment (
+    equipment_id bigint GENERATED ALWAYS AS IDENTITY,
+    public_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id bigint NOT NULL,
+    equipment_model_id bigint NOT NULL,
+    asset_tag text NOT NULL,
+    serial_number text,
+    name text NOT NULL,
+    description text,
+    status core.equipment_status DEFAULT 'IN_STOCK' NOT NULL,
+    condition core.equipment_condition DEFAULT 'NEW' NOT NULL,
+    is_critical boolean DEFAULT false NOT NULL,
+    home_location_id bigint NOT NULL,
+    current_location_id bigint,
+    current_vehicle_id bigint,
+    current_compartment_id bigint,
+    custodian_person_id bigint,
+    current_tag_id bigint,
+    supplier_id bigint,
+    acquired_on date,
+    acquisition_cost numeric(14,2),
+    currency char(3) DEFAULT 'BRL' NOT NULL,
+    invoice_number text,
+    warranty_expires_on date,
+    last_inspection_at timestamptz,
+    next_calibration_due_on date,
+    next_maintenance_due_on date,
+    last_seen_at timestamptz,
+    last_seen_reader_id bigint,
+    last_seen_location_id bigint,
+    last_seen_vehicle_id bigint,
+    disposed_on date,
+    disposal_reason text,
+    notes text,
+    created_at timestamptz DEFAULT now() NOT NULL,
+    updated_at timestamptz DEFAULT now() NOT NULL,
+    created_by bigint,
+    updated_by bigint,
+    deleted_at timestamptz,
+    CONSTRAINT pk_equipment PRIMARY KEY (equipment_id)
 );
