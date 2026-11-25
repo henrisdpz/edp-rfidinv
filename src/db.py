@@ -7,7 +7,6 @@ from psycopg import sql
 from typing import LiteralString, cast
 
 from dotenv import load_dotenv
-
 load_dotenv(Path(__file__).with_name(".env"))
 
 required_settings = ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD")
